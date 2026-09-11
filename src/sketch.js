@@ -597,61 +597,89 @@ function drawEar(p, center, xAxis, yAxis, sign, rx, ry, dna, ink, beat) {
 }
 
 function drawHair(p, center, xAxis, yAxis, rx, ry, dna, ink, beat) {
-  const top = add(center, mul(yAxis, -ry * 0.55));
+  // Hair is drawn in head-local coordinates. Keeping all styles inside this
+  // local frame prevents the common failure where the hairline drifts down
+  // over the eyes or ignores the head roll.
+  const to = (x, y) => add(center, add(mul(xAxis, x), mul(yAxis, y)));
+  const roll = Math.atan2(xAxis.y, xAxis.x);
+  const jitter = (trace, i, amount) => seededSigned(dna.seed, trace, beat, i) * amount;
+  const hairLine = (n = 12, low = -0.3, wave = 0.035) => {
+    const pts = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const x = lerp(-rx * 0.72, rx * 0.72, t);
+      const y = ry * (low - Math.sin(t * Math.PI) * wave + jitter('hairline-y', i, 0.01));
+      pts.push(to(x, y));
+    }
+    return pts;
+  };
+
   if (dna.hairStyle === 'cap') {
     const cap = [];
-    for (let i = 0; i <= 12; i++) {
-      const t = i / 12;
-      const a = Math.PI + t * Math.PI;
-      cap.push(add(center, add(mul(xAxis, Math.cos(a) * rx * 1.03), mul(yAxis, Math.sin(a) * ry * 0.82 - ry * 0.08))));
+    for (let i = 0; i <= 18; i++) {
+      const t = i / 18;
+      const x = lerp(-rx * 0.96, rx * 0.96, t);
+      const crown = -0.27 - Math.sin(t * Math.PI) * 0.52;
+      cap.push(to(x + jitter('hair-cap-x', i, rx * 0.015), ry * (crown + jitter('hair-cap-y', i, 0.012))));
     }
-    cap.push(add(center, add(mul(xAxis, rx * 0.74), mul(yAxis, -ry * 0.06))));
-    cap.push(add(center, add(mul(xAxis, -rx * 0.74), mul(yAxis, -ry * 0.03))));
-    drawFilledShape(p, cap, dna.hair, ink, 'hair-cap', beat, rx * 0.015);
-    drawSoftStroke(
-      p,
-      [
-        add(center, add(mul(xAxis, -rx * 0.55), mul(yAxis, -ry * 0.04))),
-        add(center, add(mul(xAxis, rx * 0.5), mul(yAxis, -ry * 0.08))),
-      ],
-      colorWithAlpha(ink, 0.6),
-      rx * 0.018,
-      'hair-cap-line',
-      beat,
-      'round',
-    );
+    const line = hairLine(12, -0.3, 0.045);
+    cap.push(...line.slice().reverse());
+    drawFilledShape(p, cap, dna.hair, ink, 'hair-cap', beat, rx * 0.012);
+    drawSoftStroke(p, line, colorWithAlpha(ink, 0.62), rx * 0.016, 'hair-cap-line', beat, 'round');
   } else if (dna.hairStyle === 'bob') {
-    const bob = [];
-    for (let i = 0; i < 34; i++) {
-      const a = (-0.98 + (i / 33) * 1.96) * Math.PI;
-      const localX = Math.cos(a) * rx * 1.08;
-      const localY = Math.sin(a) * ry * 0.96 - ry * 0.03;
-      if (localY < ry * 0.34) bob.push(add(center, add(mul(xAxis, localX), mul(yAxis, localY))));
+    const bob = [to(-rx * 0.82, ry * 0.35), to(-rx * 1.02, -ry * 0.12)];
+    for (let i = 0; i <= 18; i++) {
+      const t = i / 18;
+      const x = lerp(-rx * 0.96, rx * 0.96, t);
+      const y = ry * (-0.2 - Math.sin(t * Math.PI) * 0.54 + jitter('hair-bob-arc', i, 0.012));
+      bob.push(to(x, y));
     }
-    bob.push(add(center, add(mul(xAxis, rx * 0.68), mul(yAxis, ry * 0.44))));
-    bob.push(add(center, add(mul(xAxis, -rx * 0.68), mul(yAxis, ry * 0.44))));
-    drawFilledShape(p, bob, dna.hair, ink, 'hair-bob', beat, rx * 0.012);
+    bob.push(to(rx * 1.02, -ry * 0.1), to(rx * 0.82, ry * 0.35), to(rx * 0.3, ry * 0.43), to(-rx * 0.25, ry * 0.42));
+    drawFilledShape(p, bob, dna.hair, ink, 'hair-bob', beat, rx * 0.011);
+
+    const fringe = hairLine(10, -0.29, 0.04);
+    drawSoftStroke(p, fringe, colorWithAlpha(ink, 0.5), rx * 0.015, 'hair-bob-fringe', beat, 'round');
     for (let i = -2; i <= 2; i++) {
-      const root = add(top, mul(xAxis, i * rx * 0.19));
-      const end = add(center, add(mul(xAxis, i * rx * 0.28), mul(yAxis, ry * (0.15 + Math.abs(i) * 0.04))));
-      drawSoftStroke(p, [root, end], colorWithAlpha(ink, 0.38), rx * 0.018, `hair-bob-strand-${i}`, beat, 'round');
+      const root = to(i * rx * 0.2, -ry * 0.57);
+      const end = to(i * rx * 0.26 + jitter('hair-bob-strand-x', i + 4, rx * 0.03), -ry * (0.23 + Math.abs(i) * 0.025));
+      drawSoftStroke(p, [root, end], colorWithAlpha(ink, 0.34), rx * 0.014, `hair-bob-strand-${i}`, beat, 'round');
     }
   } else if (dna.hairStyle === 'curls') {
     for (let i = -4; i <= 4; i++) {
-      const base = add(center, add(mul(xAxis, i * rx * 0.22), mul(yAxis, -ry * (0.62 - Math.abs(i) * 0.02))));
-      drawBlobEllipse(p, base, rx * 0.18, ry * 0.16, i * 0.2, dna.hair, ink, `curl-${i}`, beat);
+      const arc = 1 - Math.abs(i) / 5;
+      const base = to(i * rx * 0.21, -ry * (0.48 + arc * 0.17) + jitter('curl-y', i + 5, ry * 0.02));
+      drawBlobEllipse(p, base, rx * 0.16, ry * 0.145, roll + i * 0.18, dna.hair, ink, `curl-${i}`, beat);
     }
+    for (const side of [-1, 1]) {
+      const sideCurl = to(side * rx * 0.82, -ry * 0.23);
+      drawBlobEllipse(p, sideCurl, rx * 0.13, ry * 0.16, roll + side * 0.35, dna.hair, ink, `curl-side-${side}`, beat);
+    }
+    const fringe = hairLine(8, -0.28, 0.03);
+    drawSoftStroke(p, fringe, colorWithAlpha(ink, 0.45), rx * 0.014, 'curl-fringe', beat, 'round');
   } else {
-    const spikes = [];
-    for (let i = -5; i <= 5; i++) {
-      const x = i * rx * 0.19;
-      const high = -ry * (0.68 + (i % 2 ? 0.12 : 0.03));
-      spikes.push(add(center, add(mul(xAxis, x), mul(yAxis, high))));
-      spikes.push(add(center, add(mul(xAxis, x + rx * 0.08), mul(yAxis, -ry * 0.42))));
+    const top = [];
+    const n = 10;
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const x = lerp(-rx * 0.82, rx * 0.82, t);
+      const tall = i % 2 === 0 ? 0.67 : 0.79;
+      const centerBoost = 0.06 * Math.sin(t * Math.PI);
+      top.push(to(x + jitter('hair-spike-x', i, rx * 0.02), -ry * (tall + centerBoost + jitter('hair-spike-y', i, 0.018))));
     }
-    spikes.push(add(center, add(mul(xAxis, rx * 0.82), mul(yAxis, -ry * 0.08))));
-    spikes.push(add(center, add(mul(xAxis, -rx * 0.82), mul(yAxis, -ry * 0.06))));
-    drawFilledShape(p, spikes, dna.hair, ink, 'hair-spikes', beat, rx * 0.012);
+    const front = [];
+    for (let i = n; i >= 0; i--) {
+      const t = i / n;
+      const x = lerp(-rx * 0.74, rx * 0.74, t);
+      const y = -ry * (0.28 + (i % 2) * 0.035 + Math.sin(t * Math.PI) * 0.025);
+      front.push(to(x, y));
+    }
+    drawFilledShape(p, [...top, ...front], dna.hair, ink, 'hair-spikes', beat, rx * 0.011);
+
+    for (let i = -3; i <= 3; i++) {
+      const root = to(i * rx * 0.2, -ry * 0.35);
+      const tip = to(i * rx * 0.2 + jitter('hair-short-bang-x', i + 4, rx * 0.025), -ry * (0.22 + Math.abs(i) * 0.012));
+      drawSoftStroke(p, [root, tip], colorWithAlpha(ink, 0.55), rx * 0.012, `hair-short-bang-${i}`, beat, 'round');
+    }
   }
 }
 

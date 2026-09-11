@@ -1,24 +1,48 @@
 name: Deploy static p5 sketch to GitHub Pages
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
-      - arena/01a08e7e-avatarer
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
 concurrency:
-  group: github-pages
+  group: github-pages-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  validate:
+    name: Validate static sketch
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate JavaScript syntax
+        run: node --check src/sketch.js
+
+      - name: Verify static assets
+        run: |
+          test -f index.html
+          test -f styles.css
+          test -f src/sketch.js
+          test -f vendor/p5.min.js
+          test -f .nojekyll
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: validate
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -32,7 +56,7 @@ jobs:
       - name: Prepare static site
         run: |
           mkdir -p _site
-          cp index.html styles.css package.json README.md .nojekyll _site/
+          cp index.html styles.css README.md .nojekyll _site/
           cp -R src vendor _site/
 
       - name: Upload static site artifact
