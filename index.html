@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Avatarer · p5 full body rig</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app-shell">
+      <aside class="panel" aria-label="Avatar controls">
+        <div class="brand">
+          <span class="pill">p5.js</span>
+          <h1>Avatarer</h1>
+          <p>
+            A seeded, hand-drawn full-body character rig. Drive it with mouse + keyboard,
+            or switch to live MediaPipe Pose when a camera is available.
+          </p>
+        </div>
+
+        <section class="control-card">
+          <h2>Driver</h2>
+          <div class="segmented" role="group" aria-label="Choose rig driver">
+            <button id="mode-manual" class="active" type="button" data-mode="manual">Mouse + keys</button>
+            <button id="mode-mediapipe" type="button" data-mode="mediapipe">MediaPipe live</button>
+          </div>
+          <button id="start-camera" class="primary hidden" type="button">Start camera</button>
+          <p id="driver-status" class="status">Manual rig ready. Move the cursor and press 1–5.</p>
+        </section>
+
+        <section class="control-card">
+          <h2>Character seed</h2>
+          <div class="seed-row">
+            <input id="seed-input" type="text" value="javascript-friend-42" aria-label="Character seed" />
+            <button id="reroll" type="button" title="Random seed">↻</button>
+          </div>
+          <p class="hint">Same seed, same person. Lines redraw with a small 8-beat pen boil.</p>
+        </section>
+
+        <section class="control-card manual-card">
+          <h2>Mouse target</h2>
+          <div class="target-grid" role="group" aria-label="Select mouse target">
+            <button type="button" data-target="leftWrist">1 left hand</button>
+            <button type="button" data-target="rightWrist" class="active">2 right hand</button>
+            <button type="button" data-target="leftAnkle">3 left foot</button>
+            <button type="button" data-target="rightAnkle">4 right foot</button>
+            <button type="button" data-target="head">5 head / gaze</button>
+          </div>
+          <label class="check-row"><input id="follow-mouse" type="checkbox" checked /> Mouse drives selected control</label>
+          <p class="hint">Keys: WASD/Arrows move · Q/E lean · C crouch · Space bounce · B blink · M talk · P reset.</p>
+        </section>
+
+        <section class="control-card">
+          <h2>View</h2>
+          <label class="check-row"><input id="show-rig" type="checkbox" /> Show rig bones</label>
+          <label class="check-row"><input id="show-video" type="checkbox" /> Show camera ghost</label>
+          <label class="check-row"><input id="mirror-video" type="checkbox" checked /> Mirror webcam</label>
+          <label class="check-row"><input id="smooth-live" type="checkbox" checked /> Smooth live pose</label>
+        </section>
+
+        <footer>
+          Inspired by the “DNA / Motion / Style” split in
+          <a href="https://allmyfriendsaremadeofjavascript.nikolaj-sokolowski.de/docs/en/" target="_blank" rel="noreferrer">all my friends are made of javascript</a>.
+        </footer>
+      </aside>
+
+      <main id="stage" aria-label="Avatar stage">
+        <div id="canvas-holder"></div>
+        <video id="input-video" playsinline muted></video>
+      </main>
+    </div>
+
+    <script src="vendor/p5.min.js"></script>
+    <script type="module" src="src/sketch.js"></script>
+  </body>
+</html>
