@@ -21,46 +21,158 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Validate JavaScript syntax
         run: node --check src/sketch.js
 
       - name: Verify static assets
         run: |
-          test -f index.html
-          test -f styles.css
-          test -f src/sketch.js
-          test -f vendor/p5.min.js
-          test -f .nojekyll
+          set -euo pipefail
+          for asset in index.html styles.css src/sketch.js vendor/p5.min.js .nojekyll; do
+            test -f "$asset" || { echo "::error::Missing asset: $asset"; exit 1; }
+          done
+
+      - name: Verify index.html references resolve
+        run: |
+          set -euo pipefail
+          # The sketch is published from /<repository>/ on GitHub Pages, so every
+          # reference must stay relative and point at a file that ships with it.
+          grep -oE '(src|href)="[^"]+"' index.html \
+            | sed -E 's/^[a-z]+="([^"]+)"$/\1/' \
+            | grep -vE '^(https?:)?//|^#|^mailto:' \
+            | sort -u \
+            | while read -r asset; do
+                test -f "$asset" || { echo "::error file=index.html::Referenced asset '$asset' does not exist."; exit 1; }
+              done
 
   publish:
-    name: Publish gh-pages branch
+    name: Publish to GitHub Pages
     needs: validate
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # mirror the build to the gh-pages branch
+      pages: write # publish through the GitHub Actions Pages pipeline
+      id-token: write # OIDC token required by actions/deploy-pages
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url || format('https://{0}.github.io/{1}/', github.repository_owner, github.event.repository.name) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Prepare static site
+      - name: Build static site
         run: |
+          set -euo pipefail
+          rm -rf _site
           mkdir -p _site
           cp index.html styles.css README.md .nojekyll _site/
           cp -R src vendor _site/
+          find _site -type f | sort
 
-      - name: Push static site to gh-pages
+      - name: Detect Pages configuration
+        id: pages
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+          api="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/pages"
+          status=$(curl -sS -o pages-site.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${api}") || status=000
+          if [ "${status}" = "200" ]; then
+            mode=$(jq -r '.build_type // "legacy"' pages-site.json)
+          else
+            mode="disabled"
+          fi
+          echo "mode=${mode}" >> "$GITHUB_OUTPUT"
+          echo "PAGES_MODE=${mode}" >> "$GITHUB_ENV"
+          echo "GitHub Pages site API returned HTTP ${status} -> build type '${mode}'."
+
+      - name: Enable Pages when a PAGES_TOKEN secret is available
+        if: steps.pages.outputs.mode == 'disabled'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGES_TOKEN: ${{ secrets.PAGES_TOKEN }}
+        run: |
+          set -euo pipefail
+          token="${PAGES_TOKEN:-$GH_TOKEN}"
+          api="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/pages"
+          status=$(curl -sS -o enable-pages.json -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer ${token}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -d '{"build_type":"workflow"}' \
+            "${api}") || status=000
+          if [ "${status}" = "201" ]; then
+            echo "PAGES_MODE=workflow" >> "$GITHUB_ENV"
+            echo "GitHub Pages is enabled with the GitHub Actions build type."
+          else
+            echo "::notice::GitHub Pages could not be enabled automatically (HTTP ${status}): $(cat enable-pages.json)"
+          fi
+
+      - name: Mirror build to the gh-pages branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
           cd _site
-          git init
+          git init -q -b gh-pages
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b gh-pages
           git add -A
-          git commit -m "Deploy ${GITHUB_SHA}"
-          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push --force origin gh-pages
+          git commit -q -m "Deploy ${GITHUB_SHA}"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+
+      - name: Upload Pages artifact
+        if: env.PAGES_MODE == 'workflow'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+          include-hidden-files: true
+
+      - name: Deploy to GitHub Pages
+        if: env.PAGES_MODE == 'workflow'
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+      - name: Report branch deployment
+        if: env.PAGES_MODE == 'legacy'
+        run: |
+          set -euo pipefail
+          repo_name="${GITHUB_REPOSITORY#*/}"
+          {
+            echo "### GitHub Pages"
+            echo
+            echo "Pages uses the classic source **Deploy from a branch** (\`gh-pages\`), so this run updated <https://github.com/${GITHUB_REPOSITORY}/tree/gh-pages>."
+            echo
+            echo "GitHub republishes the site from that branch, usually within a minute: <https://${GITHUB_REPOSITORY_OWNER}.github.io/${repo_name}/>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail when Pages is not enabled
+        if: env.PAGES_MODE == 'disabled'
+        run: |
+          set -euo pipefail
+          settings_url="https://github.com/${GITHUB_REPOSITORY}/settings/pages"
+          repo_name="${GITHUB_REPOSITORY#*/}"
+          {
+            echo "## GitHub Pages is not enabled"
+            echo
+            echo "The sketch was built and mirrored to the \`gh-pages\` branch, but GitHub Pages does not serve it yet."
+            echo
+            echo "A repository owner has to enable it once:"
+            echo
+            echo "1. Open ${settings_url}"
+            echo "2. Under **Build and deployment > Source** pick **GitHub Actions** (recommended), or **Deploy from a branch > \`gh-pages\`**."
+            echo "3. Re-run this workflow, or push to \`main\`."
+            echo
+            echo "Expected site URL: <https://${GITHUB_REPOSITORY_OWNER}.github.io/${repo_name}/>"
+            echo
+            echo "_This workflow cannot click that setting itself: the built-in \`GITHUB_TOKEN\` is not allowed to create a Pages site. Configure a \`PAGES_TOKEN\` secret (fine-grained PAT with Pages write access) to let the workflow enable Pages automatically._"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error title=GitHub Pages is not enabled::Enable Pages at ${settings_url} (Source: GitHub Actions), then re-run this workflow."
+          exit 1
