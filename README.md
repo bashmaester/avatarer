@@ -21,6 +21,27 @@ npm start
 
 Then open <http://localhost:5173>.
 
+## Deploy to GitHub Pages
+
+`.github/workflows/pages.yml` publishes the sketch on every push to `main`:
+
+- **Validate static sketch** (also runs on pull requests): checks the JavaScript syntax, the required files, and that every relative reference in `index.html` resolves.
+- **Publish to GitHub Pages**: builds `_site/`, mirrors it to the `gh-pages` branch, and — when Pages is configured with the **GitHub Actions** source — uploads and deploys it with `actions/deploy-pages`.
+
+The site is served from <https://bashmaester.github.io/avatarer/>.
+
+### One-time repository setup
+
+GitHub Pages must be switched on once by a repository owner. The workflow cannot do it on its own, because the built-in `GITHUB_TOKEN` is not allowed to create a Pages site (the API answers `403 Resource not accessible by integration`), and a repository without Pages configured answers `404` for `GET /repos/{owner}/{repo}/pages`.
+
+1. Open <https://github.com/bashmaester/avatarer/settings/pages>.
+2. Under **Build and deployment → Source** choose **GitHub Actions** (recommended) or **Deploy from a branch → `gh-pages`**.
+3. Re-run the *Publish static p5 sketch to GitHub Pages* workflow, or push to `main`.
+
+Until then the publish workflow ends with a red run whose summary links to that setting, so the missing configuration cannot pass unnoticed.
+
+Optional: add a `PAGES_TOKEN` repository secret (fine-grained PAT with *Pages: read and write*) and the workflow enables Pages by itself on the first run.
+
 ## Controls
 
 ### Manual rig
