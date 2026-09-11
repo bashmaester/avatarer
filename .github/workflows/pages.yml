@@ -1,4 +1,4 @@
-name: Deploy static p5 sketch to GitHub Pages
+name: Publish static p5 sketch to GitHub Pages
 
 on:
   pull_request:
@@ -34,24 +34,16 @@ jobs:
           test -f vendor/p5.min.js
           test -f .nojekyll
 
-  deploy:
-    name: Deploy to GitHub Pages
+  publish:
+    name: Publish gh-pages branch
     needs: validate
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
 
       - name: Prepare static site
         run: |
@@ -59,11 +51,16 @@ jobs:
           cp index.html styles.css README.md .nojekyll _site/
           cp -R src vendor _site/
 
-      - name: Upload static site artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Push static site to gh-pages
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          cd _site
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b gh-pages
+          git add -A
+          git commit -m "Deploy ${GITHUB_SHA}"
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin gh-pages
